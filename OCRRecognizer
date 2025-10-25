@@ -1,4 +1,0 @@
-import easyocr
-reader = easyocr.Reader(['en','hi','ta','te','ml'])
-result = reader.readtext('page.jpg', detail=0)
-text = ' '.join(result)
