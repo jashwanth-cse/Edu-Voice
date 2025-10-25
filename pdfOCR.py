@@ -1,53 +1,35 @@
-import os
-import tempfile
-import platform
 import fitz  # PyMuPDF
 import easyocr
 from transformers import pipeline
 from deep_translator import GoogleTranslator
 from gtts import gTTS
+import os
+import tempfile
+import platform
 
 # ----------------------------
-# Configuration
+# Initialize OCR readers
 # ----------------------------
-lang_pairs = [
-    ['ta', 'en'],  # Tamil
-    ['te', 'en'],  # Telugu
-    ['bn', 'en'],  # Bengali
-    ['hi', 'en'],  # Hindi
-]
+# Only supported language + English combinations
+readers = {
+   # "ta": easyocr.Reader(['ta','en'], gpu=False),  # Tamil
+    "hi": easyocr.Reader(['hi','en'], gpu=False),  # Hindi
+    "te": easyocr.Reader(['te','en'], gpu=False),  # Telugu
+    "bn": easyocr.Reader(['bn','en'], gpu=False),  # Bengali
+}
 
+# Summarization pipeline
+summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
+
+# Language codes for translation and TTS
 languages = {
-    "Hindi": "hi",
     "Tamil": "ta",
+    "Hindi": "hi",
     "Telugu": "te",
     "Bengali": "bn",
 }
 
-# ----------------------------
-# Helper: Initialize EasyOCR readers
-# ----------------------------
-def init_readers(lang_pairs):
-    readers = {}
-    for pair in lang_pairs:
-        lang = pair[0]
-        # Check if model exists locally to avoid re-download
-        model_dir = os.path.join(os.path.expanduser("~"), ".EasyOCR", lang)
-        if os.path.exists(model_dir):
-            print(f"✅ Using cached EasyOCR model for {lang}")
-            readers[lang] = easyocr.Reader(pair, gpu=False, model_storage_directory=os.path.join(os.path.expanduser("~"), ".EasyOCR"))
-        else:
-            print(f"⚡ Downloading EasyOCR model for {lang} (first time, may take a few minutes)")
-            readers[lang] = easyocr.Reader(pair, gpu=False)
-    return readers
-
-readers = init_readers(lang_pairs)
-
-# ----------------------------
-# Initialize summarizer
-# ----------------------------
-summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
-print("✅ Summarizer model loaded.\n")
+print("✅ OCR and Summarization models loaded.\n")
 
 # ----------------------------
 # Helper: Extract text from PDF
@@ -55,23 +37,21 @@ print("✅ Summarizer model loaded.\n")
 def extract_text_from_pdf(pdf_path):
     doc = fitz.open(pdf_path)
     full_text = ""
-    for page_number, page in enumerate(doc, start=1):
+    for page_num, page in enumerate(doc, start=1):
         text = page.get_text()
         if text.strip():
             full_text += text + "\n"
         else:
-            # Use OCR if page has no text
+            # Use OCR if page has no selectable text
             pix = page.get_pixmap()
-            img_path = f"temp_page_{page_number}.png"
+            img_path = f"temp_page_{page_num}.png"
             pix.save(img_path)
-
-            # Try OCR for each language
-            ocr_page_text = []
+            # Use all readers sequentially
+            page_text = []
             for lang, reader in readers.items():
                 ocr_result = reader.readtext(img_path, detail=0)
-                if ocr_result:
-                    ocr_page_text.append(" ".join(ocr_result))
-            full_text += " ".join(ocr_page_text) + "\n"
+                page_text.extend(ocr_result)
+            full_text += " ".join(page_text) + "\n"
             os.remove(img_path)
     return full_text
 
@@ -86,7 +66,7 @@ def play_audio(text, lang_code):
     system_name = platform.system()
     if system_name == "Windows":
         os.system(f'start "" "{path}"')
-    elif system_name == "Darwin":
+    elif system_name == "Darwin":  # macOS
         os.system(f'open "{path}"')
     else:
         os.system(f'xdg-open "{path}"')
@@ -94,7 +74,7 @@ def play_audio(text, lang_code):
 # ----------------------------
 # Main Program
 # ----------------------------
-pdf_path = input("English_book.pdf")
+pdf_path = input("📄 Enter PDF file path: ")
 
 print("\n🔍 Extracting text from PDF...")
 text = extract_text_from_pdf(pdf_path)
